@@ -7,18 +7,22 @@ from typing import List, Dict
 from colorama import init
 from h5py import File
 from numpy import clip
-from torch import device, set_printoptions, from_numpy, mean
+from pandas import DataFrame
+from scipy.stats import norm
+from torch import device, set_printoptions, from_numpy, mean, tensor
 from torch.cuda import is_available as cuda_is_available
 from torch.utils.data import DataLoader
 
+from apply_elementwise import apply_function
 from bernstein.calculate_term import calculate_term
 from bernstein_cs.calculate_shift import calculate_shift
-from cohen2019.datasets import get_dataset
-from h5py_to_csv.analyze_hdf5_dataset import analyze_hdf5_dataset
-from h5py_to_csv.row_diff_from_max import row_diff_from_max
-from h5py_to_csv.softmax_with_temperature import softmax_with_temperature
+from cohen2019.datasets import get_dataset, get_num_classes
 from taylor.gaussian_quantile_approximation import gaussian_quantile_approximation
 from utils.logging_config import basic_logger
+from .analyze_hdf5_dataset import analyze_hdf5_dataset
+from .calculate_lower_bound_bonferroni import calculate_lower_bound_bonferroni
+from .row_diff_from_max import row_diff_from_max
+from .softmax_with_temperature import softmax_with_temperature
 
 
 def main() -> None:
@@ -48,6 +52,7 @@ def main() -> None:
     dataset_type: str = dataset_title.split('_')[0]
     test_dataset = get_dataset(dataset_type)
     test_loader = DataLoader(test_dataset, shuffle=False, batch_size=1, num_workers=args.num_workers)
+    num_classes = get_num_classes(dataset_type)
 
     dataset_info = analyze_hdf5_dataset(args.dataset)
     last_nonzero_index = dataset_info['last_nonzero_index']
@@ -70,6 +75,7 @@ def main() -> None:
     logger.debug(f"min_inference_count: {min_inference_count}")
     logger.debug(f"dataset_title: {dataset_title}")
     logger.debug(f"dataset_type: {dataset_type}")
+    logger.debug(f"num_classes: {num_classes}")
 
     results_bernstein_first: List[Dict[str, str | float]] = []
     results_bernstein_bonferroni_first: List[Dict[str, str | float]] = []
@@ -119,14 +125,13 @@ def main() -> None:
         normalized_bernstein_lb = mean(normalized_difference_tensor).item() - normalized_bernstein_term
         normalized_bernstein_lb = clip(normalized_bernstein_lb, 0, 1)
         bernstein_lower_bound = 2 * normalized_bernstein_lb - 1
-        end_time = time()
         results_bernstein_first.append({
             'idx': i,
             'label': label,
             'predicted': predicted,
             'correct': correct,
             'radius': max(0., bernstein_lower_bound),
-            'time': f"{end_time - start_time:.4f}"
+            'time': f"{time() - start_time:.4f}"
         })
         logger.info("First Radius + Ours + Bernstein")
         logger.debug(results_bernstein_first[-1])
@@ -137,19 +142,165 @@ def main() -> None:
         normalized_cs_lb = normalized_weighted_mean - normalized_cs_term
         normalized_cs_lb = clip(normalized_cs_lb, 0, 1)
         cs_lower_bound = 2 * normalized_cs_lb - 1
-        end_time = time()
         results_sequence_first.append({
             'idx': i,
             'label': label,
             'predicted': predicted,
             'correct': correct,
             'radius': max(0., cs_lower_bound),
-            'time': f"{end_time - start_time:.4f}"
+            'time': f"{time() - start_time:.4f}"
         })
-        logger.info("First Radius + CS")
+        logger.info("First Radius + Ours + CS")
         logger.debug(results_sequence_first[-1])
         ## Bonferroni
         # Bernstein
+        start_time = time()
+        bernstein_func = lambda x: calculate_term(vector=x, alpha=args.alpha / num_classes)
+        func = lambda x: x
+        normalized_bernstein_bonferroni_lb = calculate_lower_bound_bonferroni(x=normalized_difference_tensor,
+                                                                              means=means, index=predicted,
+                                                                              term=bernstein_func, func=func)
+        normalized_bernstein_bonferroni_lb = clip(normalized_bernstein_bonferroni_lb, 0, 1)
+        bernstein_bonferroni_lb = 2 * normalized_bernstein_bonferroni_lb - 1
+        results_bernstein_bonferroni_first.append({
+            'idx': i,
+            'label': label,
+            'predicted': predicted,
+            'correct': correct,
+            'radius': max(0., bernstein_bonferroni_lb),
+            'time': f"{time() - start_time:.4f}"
+        })
+        logger.info("First Radius + Bonferroni + Bernstein")
+        logger.debug(results_bernstein_bonferroni_first[-1])
+        # CS
+        start_time = time()
+        weighted_means = tensor([calculate_shift(x=predictions[:, i], alpha=args.alpha / num_classes, c=args.c)[0]
+                                 for i in range(num_classes)], device=torch_device)
+        cs_func = lambda x: calculate_shift(x=x, alpha=args.alpha / num_classes, c=args.c)[1]
+        normalized_cs_bonferroni_lb = calculate_lower_bound_bonferroni(x=normalized_difference_tensor,
+                                                                       means=weighted_means, index=predicted,
+                                                                       term=cs_func, func=func)
+        normalized_cs_bonferroni_lb = clip(normalized_cs_bonferroni_lb, 0, 1)
+        cs_bonferroni_lb = 2 * normalized_cs_bonferroni_lb - 1
+        results_sequence_bonferroni_first.append({
+            'idx': i,
+            'label': label,
+            'predicted': predicted,
+            'correct': correct,
+            'radius': max(0., cs_bonferroni_lb),
+            'time': f"{time() - start_time:.4f}"
+        })
+        logger.info("First Radius + Bonferroni + CS")
+        logger.debug(results_sequence_bonferroni_first[-1])
+
+        ### Second Radius
+        logger.info("Second Radius")
+        ## Ours
+        predictions_quantiles = apply_function(x=predictions, func=quantile_function)
+        logger.debug(f"predictions quantiles: {predictions_quantiles}")
+        quantile_difference_tensor = row_diff_from_max(matrix=predictions_quantiles, index=predicted)
+        logger.debug(f"quantile_difference_tensor: {quantile_difference_tensor}")
+        normalized_quantile_difference_tensor = quantile_difference_tensor / maximum
+        logger.debug(f"normalized_quantile_difference_tensor: {normalized_quantile_difference_tensor}")
+        # Bernstein
+        start_time = time()
+        normalized_bern_term = calculate_term(vector=normalized_quantile_difference_tensor, alpha=args.alpha)
+        normalized_bernstein_lb = mean(normalized_quantile_difference_tensor).item() - normalized_bern_term
+        normalized_bern_term = clip(normalized_bern_term, 0, 1)
+        bern_lb = normalized_bern_term * maximum
+        results_bernstein_second.append({
+            'idx': i,
+            'label': label,
+            'predicted': predicted,
+            'correct': correct,
+            'radius': max(0., bern_lb),
+            'time': f"{time() - start_time:.4f}"
+        })
+        logger.info("Second Radius + Ours + Bernstein")
+        logger.debug(results_bernstein_second[-1])
+        # CS
+        start_time = time()
+        normalized_weighted_mean, normalized_cs_term = calculate_shift(x=normalized_quantile_difference_tensor,
+                                                                       alpha=args.alpha, c=args.c)
+        normalized_cs_lb = normalized_weighted_mean - normalized_cs_term
+        normalized_cs_lb = clip(normalized_cs_lb, 0, 1)
+        cs_lb = normalized_cs_lb * maximum
+        results_sequence_second.append({
+            'idx': i,
+            'label': label,
+            'predicted': predicted,
+            'correct': correct,
+            'radius': max(0., cs_lb),
+            'time': f"{time() - start_time:.4f}"
+        })
+        logger.info("Second Radius + Ours + CS")
+        logger.debug(results_sequence_second[-1])
+        ## Bonferroni
+        # Bernstein
+        start_time = time()
+        normalized_bernstein_bonferroni_lb = calculate_lower_bound_bonferroni(x=normalized_difference_tensor,
+                                                                              means=means, index=predicted,
+                                                                              term=bernstein_func, func=norm.ppf)
+        normalized_bernstein_bonferroni_lb = clip(normalized_bernstein_bonferroni_lb, 0, 1)
+        bernstein_bonferroni_lb = normalized_bernstein_bonferroni_lb * maximum
+        results_bernstein_second.append({
+            'idx': i,
+            'label': label,
+            'predicted': predicted,
+            'correct': correct,
+            'radius': max(0., bernstein_bonferroni_lb),
+            'time': f"{time() - start_time:.4f}"
+        })
+        logger.info("Second Radius + Bonferroni + Bernstein")
+        logger.debug(results_bernstein_second[-1])
+        # CS
+        start_time = time()
+        weighted_means = tensor([calculate_shift(x=predictions[:, i], alpha=args.alpha / num_classes, c=args.c)[0]
+                                 for i in range(num_classes)], device=torch_device)
+        cs_func = lambda x: calculate_shift(x=x, alpha=args.alpha / num_classes, c=args.c)[1]
+        normalized_cs_bonferroni_lb = calculate_lower_bound_bonferroni(x=normalized_difference_tensor,
+                                                                       means=weighted_means, index=predicted,
+                                                                       term=cs_func, func=norm.ppf)
+        normalized_cs_bonferroni_lb = clip(normalized_cs_bonferroni_lb, 0, 1)
+        cs_bonferroni_lb = normalized_cs_bonferroni_lb * maximum
+        results_sequence_bonferroni_second.append({
+            'idx': i,
+            'label': label,
+            'predicted': predicted,
+            'correct': correct,
+            'radius': max(0., cs_bonferroni_lb),
+            'time': f"{time() - start_time:.4f}"
+        })
+        logger.info("Second + Radius + Bonferroni + CS")
+        logger.debug(results_sequence_bonferroni_second[-1])
+
+    df_bernstein_first = DataFrame(results_bernstein_first)
+    df_bernstein_bonferroni_first = DataFrame(results_bernstein_bonferroni_first)
+    df_sequence_first = DataFrame(results_sequence_first)
+    df_sequence_bonferroni_first = DataFrame(results_sequence_bonferroni_first)
+
+    df_bernstein_second = DataFrame(results_bernstein_second)
+    df_bernstein_bonferroni_second = DataFrame(results_bernstein_bonferroni_second)
+    df_sequence_second = DataFrame(results_sequence_second)
+    df_sequence_bonferroni_second = DataFrame(results_sequence_bonferroni_second)
+
+    df_bernstein_first.to_csv(args.outdir + '/' + dataset_title + '_bernstein_first.csv', index=False)
+    df_bernstein_bonferroni_first.to_csv(args.outdir + '/' + dataset_title + '_bernstein_bonferroni_first.csv',
+                                         index=False)
+    df_sequence_first.to_csv(args.outdir + '/' + dataset_title + '_sequence_first.csv', index=False)
+    df_sequence_bonferroni_first.to_csv(args.outdir + '/' + dataset_title + '_sequence_bonferroni_first.csv',
+                                        index=False)
+
+    df_bernstein_second.to_csv(args.outdir + '/' + dataset_title + '_bernstein_second.csv', index=False)
+    df_bernstein_bonferroni_second.to_csv(
+        args.outdir + '/' + dataset_title + '_bernstein_bonferroni_second.csv',
+        index=False)
+    df_sequence_second.to_csv(args.outdir + '/' + dataset_title + '_sequence_second.csv', index=False)
+    df_sequence_bonferroni_second.to_csv(args.outdir + '/' + dataset_title + '_sequence_bonferroni_second.csv',
+                                         index=False)
+
+    logger.info(f"Saved results to {args.outdir} directory")
+    logger.info("Done in {:.4f}s".format(time() - global_time))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "continu"
+version = "0.1.0"
+description = ""
+authors = ["Zakariae MOUTAOUAKIL <zakariae.moutaouakil@etu.u-paris.fr>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+numpy = "^2.1.1"
+pandas = "^2.2.3"
+scipy = "^1.14.1"
+matplotlib = "^3.9.2"
+h5py = "^3.11.0"
+torch = {version = "^2.4.1+cpu", source = "pytorch"}
+torchvision = {version = "^0.19.1+cpu", source = "pytorch"}
+colorama = "^0.4.6"
+
+
+[[tool.poetry.source]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "explicit"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

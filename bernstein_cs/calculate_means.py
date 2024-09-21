@@ -1,6 +1,9 @@
 from torch import Tensor, cumsum, arange, zeros
 
+from torch.jit import script
 
+
+@script
 def calculate_means(x: Tensor) -> Tensor:
     t = x.size(0)
 

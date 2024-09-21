@@ -1,6 +1,9 @@
 from torch import Tensor, zeros
 
+from torch.jit import script
 
+
+@script
 def calculate_v(x: Tensor, mu: Tensor) -> Tensor:
     t = x.size(0)
 

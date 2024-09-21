@@ -1,6 +1,9 @@
 from torch import Tensor, cumsum, zeros
 
+from torch.jit import script
 
+
+@script
 def calculate_weighted_means(x: Tensor, lambdas: Tensor) -> Tensor:
     t = x.size(0)
 

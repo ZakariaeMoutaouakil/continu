@@ -1,6 +1,9 @@
 from torch import Tensor, cumsum, log, log1p, tensor, zeros
 
+from torch.jit import script
 
+
+@script
 def calculate_terms(x: Tensor, lambdas: Tensor, v: Tensor, alpha: float) -> Tensor:
     t = x.size(0)
 

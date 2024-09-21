@@ -1,6 +1,9 @@
 from torch import Tensor, cumsum, sqrt, arange, zeros
 
+from torch.jit import script
 
+
+@script
 def calculate_sigmas(x: Tensor, mu: Tensor) -> Tensor:
     t = x.size(0)
 

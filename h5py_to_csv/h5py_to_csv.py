@@ -25,6 +25,12 @@ from .row_diff_from_max import row_diff_from_max
 from .softmax_with_temperature import softmax_with_temperature
 
 
+def seconds_to_minutes_seconds(seconds: float):
+    minutes = int(seconds // 60)
+    remaining_seconds = seconds % 60
+    return minutes, remaining_seconds
+
+
 def main() -> None:
     parser = ArgumentParser(description='Transform dataset')
     parser.add_argument("--temperature", type=float, required=True, help="softmax temperature")
@@ -308,7 +314,8 @@ def main() -> None:
                                          index=False)
 
     logger.info(f"Saved results to {args.outdir} directory")
-    logger.info("Done in {:.4f}s".format(time() - global_time))
+    final_time = seconds_to_minutes_seconds(time() - global_time)
+    logger.info(f"Done in {final_time[0]} minutes and {final_time[1]:.0f} seconds")
 
 
 if __name__ == "__main__":

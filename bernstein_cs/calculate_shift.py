@@ -1,6 +1,7 @@
 from typing import Tuple
 
 from torch import Tensor, tensor, cat
+from torch.jit import script
 
 from .calculate_lambdas import calculate_lambdas
 from .calculate_means import calculate_means
@@ -10,6 +11,7 @@ from .calculate_v import calculate_v
 from .calculate_weighted_means import calculate_weighted_means
 
 
+@script
 def calculate_shift(x: Tensor, alpha: float, c: float) -> Tuple[float, float]:
     if x.dim() != 1:
         raise ValueError("x must be a 1D tensor.")

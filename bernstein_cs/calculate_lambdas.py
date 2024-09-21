@@ -1,8 +1,10 @@
 from math import log, sqrt
 
 from torch import Tensor, log, sqrt, arange, log1p, tensor, zeros
+from torch.jit import script
 
 
+@script
 def calculate_lambdas(x: Tensor, sigma: Tensor, alpha: float, c: float) -> Tensor:
     t = x.size(0)
     lambdas = zeros(t, device=x.device)

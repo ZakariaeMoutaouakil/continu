@@ -1,3 +1,4 @@
 .*/
 *.lock
 dataset_cache/
+results/

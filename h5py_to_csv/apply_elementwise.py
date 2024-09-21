@@ -3,7 +3,7 @@ from typing import Callable
 from torch import Tensor, tensor
 
 
-def apply_function(x: Tensor, func: Callable[[float], float]) -> Tensor:
+def apply_function_ref(x: Tensor, func: Callable[[float], float]) -> Tensor:
     """
     Apply a given function element-wise to a PyTorch tensor.
 
@@ -16,6 +16,20 @@ def apply_function(x: Tensor, func: Callable[[float], float]) -> Tensor:
     """
     # Apply the function to each element of the tensor manually
     return tensor([func(item) for item in x.flatten()], dtype=x.dtype).reshape(x.shape)
+
+
+def apply_function(x: Tensor, func: Callable[[float], float]) -> Tensor:
+    """
+    Apply a given function element-wise to a PyTorch tensor.
+
+    Args:
+        x (torch.Tensor): The input tensor to which the function will be applied.
+        func (Callable[[Tensor], Tensor]): A function that takes a Tensor and returns a Tensor.
+
+    Returns:
+        torch.Tensor: A new tensor with the function applied to each element.
+    """
+    return func(x)
 
 
 def main():
@@ -32,12 +46,16 @@ def main():
     output_tensor_1d = apply_function(input_tensor_1d, square)
     print("Input Tensor 1D:", input_tensor_1d)
     print("Output Tensor 1D:", output_tensor_1d)
+    output_tensor_1d_ref = apply_function_ref(input_tensor_1d, square)
+    print("Output Tensor 1D Ref:", output_tensor_1d_ref)
 
     # Example 2: Applying the function to a 2D tensor (matrix)
     input_tensor_2d = tensor([[1.0, 2.0, 3.0], [3.0, 4.0, 5.0]])
     output_tensor_2d = apply_function(input_tensor_2d, square)
     print("Input Tensor 2D:", input_tensor_2d)
     print("Output Tensor 2D:", output_tensor_2d)
+    output_tensor_2d_ref = apply_function_ref(input_tensor_2d, square)
+    print("Output Tensor 2D Ref:", output_tensor_2d_ref)
 
 
 if __name__ == "__main__":

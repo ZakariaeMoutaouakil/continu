@@ -11,7 +11,7 @@ from .calculate_weighted_means import calculate_weighted_means
 
 
 def calculate_shift(x: Tensor, alpha: float, c: float) -> Tuple[float, float]:
-    if x.dim != 1:
+    if x.dim() != 1:
         raise ValueError("x must be a 1D tensor.")
     if x.numel() < 2:
         raise ValueError("x must have at least two elements.")

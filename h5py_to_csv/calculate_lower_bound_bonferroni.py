@@ -7,6 +7,7 @@ def calculate_lower_bound_bonferroni(x: Tensor, means: Tensor, index: int, term:
                           func: Callable[[float], float]) -> float:
     assert 0 <= index < means.numel(), "Index is out of range."
     assert means.numel() == x.shape[1], "Number of means does not match the number of features."
+    assert x.shape[1] >= 2, "Number of features must be at least 2."
 
     result = zeros_like(means)
     for i in range(means.numel()):
@@ -19,4 +20,4 @@ def calculate_lower_bound_bonferroni(x: Tensor, means: Tensor, index: int, term:
     max_of_others = max(cat([result[:index], result[index + 1:]])).item()
     difference = func(value_at_index) - func(max_of_others)
 
-    return difference
+    return float(difference)
